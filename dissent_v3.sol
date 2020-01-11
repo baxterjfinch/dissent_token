@@ -1,5 +1,5 @@
 pragma solidity ^0.4.24;
-
+  pragma experimental ABIEncoderV2;
 /**
  * @title SafeMath
  * @dev Math operations with safety checks that throw on error
@@ -912,6 +912,7 @@ contract Atlas is ERC721Token, Ownable {
   /// @dev If you'd like a different price for each token type, you will
   ///   need to use a mapping like: `mapping(uint256 => uint256) tokenTypePrices;`
   uint256 currentPrice = 0;
+  mapping(uint256 => uint256) tokenTypePrices;
 
   /// The token type (1 for idea, 2 for belonging, etc)
   mapping(uint256 => uint256) tokenTypes;
@@ -921,6 +922,11 @@ contract Atlas is ERC721Token, Ownable {
 
   /// The description of the token
   mapping(uint256 => string) tokenDescription;
+
+  /// The For Sale mapping
+  mapping(uint256 => bool) tokensForSale;
+
+  mapping(uint256 => address) allowance;
 
   constructor() ERC721Token("Atlas", "ATLAS") public {
   // any init code when you deploy the contract would run here
@@ -933,8 +939,10 @@ contract Atlas is ERC721Token, Ownable {
   /// @param _description Description of the token
   function buyToken (
   uint256 _type,
+  uint256 _price,
   string _title,
-  string _description
+  string _description,
+  bool _forSale
   ) external payable {
   bytes memory _titleBytes = bytes(_title);
   require(_titleBytes.length >= TITLE_MIN_LENGTH, "Title is too short");
@@ -952,6 +960,13 @@ contract Atlas is ERC721Token, Ownable {
   tokenTypes[index] = _type;
   tokenTitles[index] = _title;
   tokenDescription[index] = _description;
+  tokenTypePrices[index] = _price;
+
+  if (_forSale) {
+      allowance[index] = address(this);
+  }
+
+  tokensForSale[index] = _forSale;
 
   emit BoughtToken(msg.sender, index);
   }
@@ -977,31 +992,69 @@ contract Atlas is ERC721Token, Ownable {
   view
   returns (
     uint256 tokenType_,
+    uint256 tokenPrice_,
     string tokenTitle_,
-    string tokenDescription_
+    string tokenDescription_,
+    bool  forSale_
   ) {
     tokenType_ = tokenTypes[_tokenId];
     tokenTitle_ = tokenTitles[_tokenId];
     tokenDescription_ = tokenDescription[_tokenId];
+    tokenPrice_ = tokenTypePrices[_tokenId];
+    forSale_ = tokensForSale[_tokenId];
+
   }
 
+  function removeFromSale(uint256 _tokenId) external {
+        address owner = ownerOf(_tokenId);
+
+          require(owner == msg.sender);
+
+          delete allowance[_tokenId];
+          tokensForSale[_tokenId] = false;
+
+          emit Approval(owner, address(this), _tokenId);
+  }
+
+      function setForSale(uint256 _tokenId) external {
+          address owner = ownerOf(_tokenId);
+
+          require(owner == msg.sender);
+
+          allowance[_tokenId] = address(this);
+          tokensForSale[_tokenId] = true;
+
+          emit Approval(owner, address(this), _tokenId);
+      }
+
+      function buyForSaleToken(uint256 _tokenId) external payable {
+          address buyer = msg.sender;
+          uint payedPrice = msg.value;
+          uint salePrice = tokenTypePrices[_tokenId];
+          require(getApproved(_tokenId) == address(this));
+          require(payedPrice >= salePrice);
+
+          buyer.transfer(payedPrice);
+
+          transferFrom(ownerOf(_tokenId), buyer, _tokenId);
+      }
   /// @notice Allows the owner of this contract to set the currentPrice for each token
-  function setCurrentPrice(uint256 newPrice)
-  public
-  onlyOwner
-  {
-    currentPrice = newPrice;
-  }
+// 	  function setCurrentPrice(uint256 newPrice)
+// 		public
+// 		onlyOwner
+// 	  {
+// 		  currentPrice = newPrice;
+// 	  }
 
-  /// @notice Returns the currentPrice for each token
-  function getCurrentPrice()
-  external
-  view
-  returns (
-  uint256 price
-  ) {
-    price = currentPrice;
-  }
+// 	  /// @notice Returns the currentPrice for each token
+// 	  function getCurrentPrice()
+// 		external
+// 		view
+// 		returns (
+// 		uint256 price
+// 	  ) {
+// 		  price = currentPrice;
+// 	  }
   /// @notice allows the owner of this contract to destroy the contract
    function kill() public {
     if(msg.sender == owner) selfdestruct(owner);
